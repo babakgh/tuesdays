@@ -1,0 +1,7 @@
+Resources:
+  tuesdayDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: Z084802528GSV9SBI10O1
+      Name: tuesday.babak.guru
+      Type: A
