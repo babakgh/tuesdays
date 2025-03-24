@@ -1,0 +1,45 @@
+# Rust build directory
+/target/
+
+# Rust backup files
+**/*.rs.bk
+
+# Remove Cargo.lock for libraries (keep it for binaries)
+# Cargo.lock
+
+# Debug files
+*.pdb
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# env files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Log files
+*.log
+
+# Generated documentation
+/doc/
+
+# Dependencies directory (if any)
+/vendor/
+
+# Build output
+/dist/
+/out/
+
+# Test coverage
+coverage/
+
+# Flamegraph profiling files
+*.svg
+perf.*

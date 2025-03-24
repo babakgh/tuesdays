@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC Stream Viewer</title>
+</head>
+<body>
+<h2>WebRTC Stream</h2>
+<video id="video" autoplay playsinline></video>
+<script>
+    const ws = new WebSocket("ws://localhost:8080/ws");
+    const peerConnection = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+    });
+
+    // When ICE candidates are available, send them to the signaling server
+    peerConnection.onicecandidate = event => {
+        if (event.candidate) {
+            ws.send(JSON.stringify({
+                message_type: "candidate",
+                sender_id: "viewer",
+                data: JSON.stringify(event.candidate)
+            }));
+        }
+    };
+
+    // When a new track is received, add it to the video element
+    peerConnection.ontrack = event => {
+        document.getElementById("video").srcObject = event.streams[0];
+    };
+
+    ws.onopen = () => {
+        console.log("✅ Connected to Signaling Server");
+
+        // Send a join message with a sender_id ("viewer")
+        ws.send(JSON.stringify({
+            message_type: "viewer_join",
+            sender_id: "viewer",
+            data: ""
+        }));
+    };
+
+    ws.onmessage = async event => {
+        console.log("📡 Incoming WebSocket Message (RAW):", event.data); // ✅ Debugging: Log raw message
+        try {
+            const message = JSON.parse(event.data);
+            console.log("📡 Parsed Message:", message); // ✅ Debugging: Log parsed message
+
+            if (message.message_type === "offer") {
+                console.log("📡 Received WebRTC Offer");
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(JSON.parse(message.data)));
+
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+
+                ws.send(JSON.stringify({
+                    message_type: "answer",
+                    sender_id: "viewer",
+                    data: JSON.stringify(answer)
+                }));
+            } else if (message.message_type === "candidate") {
+                console.log("📡 Received ICE Candidate");
+                await peerConnection.addIceCandidate(new RTCIceCandidate(JSON.parse(message.data)));
+            } else {
+                console.warn("⚠️ Unexpected message type received:", message.message_type);
+            }
+        } catch (error) {
+            console.error("❌ Failed to parse incoming message:", error);
+        }
+    };
+
+    console.log("test")
+</script>
+</body>
+</html>

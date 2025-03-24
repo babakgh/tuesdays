@@ -5,6 +5,11 @@ use webrtc::api::APIBuilder;
 use webrtc::api::media_engine::MediaEngine;
 use webrtc::media::Sample;
 use webrtc::peer_connection::configuration::RTCConfiguration;
+// Removed unused import: use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
+use tokio_tungstenite::connect_async;
+use tokio_tungstenite::tungstenite::Message;
+use futures_util::{StreamExt, SinkExt};
+// Removed unused import: use url::Url;
 use webrtc::rtp_transceiver::rtp_codec::RTCRtpCodecCapability;
 use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
 
@@ -16,12 +21,10 @@ async fn start_webrtc_stream() -> Result<(), Box<dyn std::error::Error>> {
     // ✅ Initialize GStreamer
     gst::init()?;
 
-    // ✅ Create a WebRTC MediaEngine (Handles codec support)
-    let mut media_engine = MediaEngine::default();
-    media_engine.register_default_codecs()?;
-
-    // ✅ Create WebRTC API instance
-    let api = APIBuilder::new().with_media_engine(media_engine).build();
+    // ✅ Connect to Signaling Server
+    let signaling_server_url = "ws://localhost:8080/ws";
+    let (ws_stream, _) = connect_async(signaling_server_url).await?;
+    let (mut write, _read) = ws_stream.split(); // Prefix unused variable with underscore
 
     // ✅ Define WebRTC configuration (ICE servers for NAT traversal can be added later)
     let config = RTCConfiguration {
@@ -29,8 +32,16 @@ async fn start_webrtc_stream() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
+    let api = APIBuilder::new().with_media_engine(MediaEngine::default()).build();
     // ✅ Create a WebRTC PeerConnection
     let peer_connection = Arc::new(api.new_peer_connection(config).await?);
+    let offer = peer_connection.create_offer(None).await?;
+    peer_connection.set_local_description(offer.clone()).await?;
+
+    // ✅ Send offer to the signaling server
+    let offer_json = serde_json::to_string(&offer)?;
+    println!("📡 Sending WebRTC Offer: {}", offer_json);
+    write.send(Message::Text(offer_json.into())).await?;
 
     // ✅ Create a WebRTC video track (VP8 Codec, 90kHz clock rate)
     let video_track = Arc::new(TrackLocalStaticSample::new(
@@ -85,11 +96,12 @@ async fn start_webrtc_stream() -> Result<(), Box<dyn std::error::Error>> {
                 let video_track_clone = video_track_clone.clone();
                 let timestamp = std::time::SystemTime::now(); // ✅ Set frame timestamp
 
-                task::spawn(async move {
+                let runtime = tokio::runtime::Runtime::new().unwrap();
+                runtime.block_on(async move {  // ✅ Fix: Use Tokio runtime
                     let _ = video_track_clone
                         .write_sample(&Sample {
                             data: sample_data,
-                            duration: std::time::Duration::from_millis(33), // ~30 FPS
+                            duration: std::time::Duration::from_millis(33),
                             timestamp,
                             prev_dropped_packets: 0,
                             prev_padding_packets: 0,
@@ -116,8 +128,26 @@ async fn start_webrtc_stream() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
+extern crate cocoa;
+
+#[cfg(target_os = "macos")]
+use cocoa::appkit::NSApplication;
+#[cfg(target_os = "macos")]
+use cocoa::base::nil;
+
+fn initialize_macos_ui() {
+    #[cfg(target_os = "macos")]
+    unsafe {
+        let ns_app = NSApplication::sharedApplication(nil);
+        ns_app.activateIgnoringOtherApps_(true);
+    }
+}
+
 #[tokio::main]
 async fn main() {
+    initialize_macos_ui(); // 🛠️ Ensure NSApplication is running
+
     if let Err(err) = start_webrtc_stream().await {
         eprintln!("❌ Error: {}", err);
     }
