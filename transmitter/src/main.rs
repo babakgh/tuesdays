@@ -35,6 +35,11 @@ struct BroadcastMessage {
     message: String,
 }
 
+// Define a custom message for closing WebSocket connections
+#[derive(Message)]
+#[rtype(result = "()")]
+struct CloseConnection;
+
 // Remove duplicate `GetMembers` struct
 #[derive(Message)]
 #[rtype(result = "Vec<String>")]
@@ -77,6 +82,18 @@ impl Handler<AddMember> for RoomActor {
     type Result = ();
 
     fn handle(&mut self, msg: AddMember, _: &mut Self::Context) {
+        // Check if the member already exists
+        if let Some(existing_addr) = self.members.get(&msg.member_id) {
+            info!(
+                "⚠️ Member '{}' already exists in Room '{}'. Replacing connection.",
+                msg.member_id, self.room_id
+            );
+
+            // Send termination signal using the new CloseConnection message
+            existing_addr.do_send(CloseConnection);
+        }
+
+        // Replace with the new connection
         self.members.insert(msg.member_id.clone(), msg.addr);
         info!(
             "🙌 Member '{}' added to Room '{}'",
@@ -162,6 +179,18 @@ impl Actor for MemberWebSocket {
     }
 }
 
+// Implement the handler in MemberWebSocket
+impl Handler<CloseConnection> for MemberWebSocket {
+    type Result = ();
+
+    fn handle(&mut self, _: CloseConnection, ctx: &mut Self::Context) {
+        ctx.close(Some(ws::CloseReason {
+            code: ws::CloseCode::Normal,
+            description: Some("Replaced by new connection".to_string()),
+        }));
+    }
+}
+
 // Implement StreamHandler for MemberWebSocket
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MemberWebSocket {
     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
@@ -178,7 +207,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MemberWebSocket {
                                     let addr = room.clone();
                                     addr.send(GetMembers)
                                         .into_actor(self)
-                                        .then(|res, act, ctx| {
+                                        .then(|res, _act, ctx| {
                                             if let Ok(members) = res {
                                                 let response = serde_json::to_string(&members)
                                                     .unwrap_or_else(|_| "[]".to_string());
@@ -248,9 +277,7 @@ async fn room_ws(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse,
         Some(id) if !id.is_empty() => id.clone(),
         _ => {
             info!("❌ Connection rejected: missing 'room_id' query parameter");
-            return Ok(
-                actix_web::HttpResponse::BadRequest().body("Missing 'room_id' query parameter")
-            );
+            return Ok(HttpResponse::BadRequest().body("Missing 'room_id' query parameter"));
         }
     };
 
@@ -258,9 +285,7 @@ async fn room_ws(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse,
         Some(id) if !id.is_empty() => id.clone(),
         _ => {
             info!("❌ Connection rejected: missing 'member_id' query parameter");
-            return Ok(
-                actix_web::HttpResponse::BadRequest().body("Missing 'member_id' query parameter")
-            );
+            return Ok(HttpResponse::BadRequest().body("Missing 'member_id' query parameter"));
         }
     };
 
@@ -274,10 +299,6 @@ async fn room_ws(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse,
         .start() // Now correctly starts as an Actix actor
     });
 
-    info!(
-        "🎥 New member '{}' connected to room '{}'",
-        member_id, room_id
-    );
     ws::start(MemberWebSocket { member_id, room_id }, &req, stream).map_err(|e| e.into())
 }
 
