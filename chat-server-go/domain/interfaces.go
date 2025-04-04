@@ -1,9 +1,5 @@
 package domain
 
-import (
-	"github.com/gorilla/websocket"
-)
-
 // Command defines the interface all client commands must implement
 // to execute logic against the server context.
 type Command interface {
@@ -16,11 +12,18 @@ type Event interface {
 	Payload() interface{} // the data to be encoded into the JSON response
 }
 
+// WebSocketConn is an interface that abstracts the websocket.Conn methods we need
+type WebSocketConn interface {
+	ReadMessage() (messageType int, p []byte, err error)
+	WriteJSON(v interface{}) error
+	Close() error
+}
+
 // Member represents a connected chat member
 type Member struct {
 	ID   string
 	Name string
-	Conn *websocket.Conn
+	Conn WebSocketConn
 }
 
 // MemberStore defines the interface for managing connected members

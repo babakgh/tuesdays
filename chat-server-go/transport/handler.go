@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sync/atomic"
 
+	"chat-server-go/domain"
 	"github.com/gorilla/websocket"
 )
 
@@ -18,40 +19,8 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-type Member struct {
-	ID   string
-	Name string
-	Conn *websocket.Conn
-}
-
-type MemberStore struct {
-	members map[string]*Member
-}
-
-func NewMemberStore() *MemberStore {
-	return &MemberStore{
-		members: make(map[string]*Member),
-	}
-}
-
-func (s *MemberStore) Add(member *Member) {
-	s.members[member.ID] = member
-}
-
-func (s *MemberStore) Remove(id string) {
-	delete(s.members, id)
-}
-
-func (s *MemberStore) List() []*Member {
-	list := make([]*Member, 0, len(s.members))
-	for _, m := range s.members {
-		list = append(list, m)
-	}
-	return list
-}
-
 type Handler struct {
-	store    *MemberStore
+	store    domain.MemberStore
 	memberID uint64
 }
 
@@ -71,13 +40,17 @@ func (h *Handler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	memberID := atomic.AddUint64(&h.memberID, 1)
 	memberName := fmt.Sprintf("member%d", memberID)
 
-	member := &Member{
+	member := &domain.Member{
 		ID:   memberName,
 		Name: memberName,
 		Conn: conn,
 	}
 
-	h.store.Add(member)
+	if err := h.store.Add(member); err != nil {
+		log.Printf("Failed to add member: %v", err)
+		conn.Close()
+		return
+	}
 	log.Printf("🔌 Member %s connected", memberName)
 
 	// Send welcome messages
@@ -88,7 +61,7 @@ func (h *Handler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	go h.handleMessages(member)
 }
 
-func (h *Handler) sendMeEvent(member *Member) {
+func (h *Handler) sendMeEvent(member *domain.Member) {
 	event := map[string]interface{}{
 		"event":  "me",
 		"member": member.Name,
@@ -97,7 +70,7 @@ func (h *Handler) sendMeEvent(member *Member) {
 	member.Conn.WriteJSON(event)
 }
 
-func (h *Handler) broadcastJoin(member *Member) {
+func (h *Handler) broadcastJoin(member *domain.Member) {
 	event := map[string]interface{}{
 		"event":   "broadcast",
 		"member":  "",
@@ -112,7 +85,7 @@ func (h *Handler) broadcast(event interface{}) {
 	}
 }
 
-func (h *Handler) handleMessages(member *Member) {
+func (h *Handler) handleMessages(member *domain.Member) {
 	defer func() {
 		h.store.Remove(member.ID)
 		member.Conn.Close()

@@ -114,9 +114,14 @@ The project includes integration tests written in Python using the `websockets` 
 pip install websockets pytest
 ```
 
-2. Run the tests:
+2. Run the server:
 ```bash
-python tests/integration_test.py
+  go run main.go
+```
+
+3. Run the tests:
+```bash
+pytest -v tests/test_chat.py 
 ```
 
 ## Architecture

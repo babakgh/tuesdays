@@ -22,6 +22,13 @@ func NewMemoryStore() *MemoryStore {
 
 // Add adds a new member to the store
 func (s *MemoryStore) Add(member *domain.Member) error {
+	if member == nil {
+		return errors.New("member cannot be nil")
+	}
+	if member.ID == "" {
+		return errors.New("member ID cannot be empty")
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

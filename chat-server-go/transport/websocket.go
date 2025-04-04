@@ -30,15 +30,30 @@ func NewWebSocketHandler() *WebSocketHandler {
 
 // HandleWebSocket handles the WebSocket upgrade and connection
 func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+	// Generate unique member ID and name
+	memberID := atomic.AddUint64(&h.memberID, 1)
+	memberName := fmt.Sprintf("member%d", memberID)
+
+	// Create a temporary member to test store availability
+	tempMember := &domain.Member{
+		ID:   memberName,
+		Name: memberName,
+	}
+
+	// Test if we can add the member
+	if err := h.store.Add(tempMember); err != nil {
+		log.Printf("Failed to add member: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	h.store.Remove(tempMember.ID) // Remove the temporary member
+
+	// Now upgrade the connection
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("Failed to upgrade connection: %v", err)
 		return
 	}
-
-	// Generate unique member ID and name
-	memberID := atomic.AddUint64(&h.memberID, 1)
-	memberName := fmt.Sprintf("member%d", memberID)
 
 	member := &domain.Member{
 		ID:   memberName,
