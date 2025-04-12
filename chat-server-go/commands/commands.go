@@ -69,6 +69,58 @@ func (c *MeCommand) Execute() error {
 	return c.Member.Conn.WriteJSON(event)
 }
 
+// DMCommand handles sending direct messages to a specific member
+type DMCommand struct {
+	Member    *domain.Member
+	Recipient string
+	Message   string
+	Store     domain.MemberStore
+}
+
+func (c *DMCommand) Execute() error {
+	// Find recipient member by name
+	members := c.Store.List()
+	var recipientMember *domain.Member
+	
+	for _, m := range members {
+		if m.Name == c.Recipient {
+			recipientMember = m
+			break
+		}
+	}
+	
+	if recipientMember == nil {
+		// Send error back to sender
+		errorEvent := &wire.EventMessage{
+			Event:   "error",
+			Message: fmt.Sprintf("Member '%s' not found", c.Recipient),
+		}
+		return c.Member.Conn.WriteJSON(errorEvent)
+	}
+	
+	// Create DM event
+	dmEvent := wire.NewDMEventMessage(c.Member.Name, c.Message)
+	
+	// Send to recipient
+	if err := recipientMember.Conn.WriteJSON(dmEvent); err != nil {
+		log.Printf("Error sending DM to member %s: %v", recipientMember.ID, err)
+		return err
+	}
+	
+	// Send confirmation to sender
+	confirmEvent := &wire.EventMessage{
+		Event:   "dm_sent",
+		Member:  c.Recipient,
+		Message: c.Message,
+	}
+	if err := c.Member.Conn.WriteJSON(confirmEvent); err != nil {
+		log.Printf("Error sending confirmation to member %s: %v", c.Member.ID, err)
+	}
+	
+	log.Printf("📤 DM from %s to %s: %s", c.Member.Name, c.Recipient, c.Message)
+	return nil
+}
+
 // CommandFactory creates the appropriate command based on the message type
 func CommandFactory(msg *wire.CommandMessage, member *domain.Member, store domain.MemberStore) (domain.Command, error) {
 	switch msg.Command {
@@ -86,6 +138,13 @@ func CommandFactory(msg *wire.CommandMessage, member *domain.Member, store domai
 	case "me":
 		return &MeCommand{
 			Member: member,
+		}, nil
+	case "dm":
+		return &DMCommand{
+			Member:    member,
+			Recipient: msg.Recipient,
+			Message:   msg.Message,
+			Store:     store,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unknown command: %s", msg.Command)

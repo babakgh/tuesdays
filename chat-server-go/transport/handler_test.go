@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -41,5 +42,42 @@ func TestHandler_HandleWebSocket(t *testing.T) {
 	}
 	if err := conn.WriteJSON(listMessage); err != nil {
 		t.Errorf("Failed to write list message: %v", err)
+	}
+	
+	// Test sending dm command with missing recipient
+	dmMessageWithoutRecipient := map[string]interface{}{
+		"command": "dm",
+		"message": "Hello, direct message!",
+	}
+	if err := conn.WriteJSON(dmMessageWithoutRecipient); err != nil {
+		t.Errorf("Failed to write DM message: %v", err)
+	}
+	
+	// Create a second connection to test DM functionality
+	conn2, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("Failed to connect second WebSocket: %v", err)
+	}
+	defer conn2.Close()
+	
+	// Allow time for the second connection to be established
+	time.Sleep(100 * time.Millisecond)
+	
+	// Just use a simple hardcoded recipient name
+	// We know the handler generates names like "member1", "member2", etc.
+	// The first connection is "member1", so the second will be "member2"
+	recipient := "member2"
+	
+	// Allow time for the connections to be registered
+	time.Sleep(100 * time.Millisecond)
+	
+	// Test sending a valid DM
+	validDM := map[string]interface{}{
+		"command":   "dm",
+		"message":   "Hello, direct message!",
+		"recipient": recipient,
+	}
+	if err := conn.WriteJSON(validDM); err != nil {
+		t.Errorf("Failed to write valid DM: %v", err)
 	}
 } 

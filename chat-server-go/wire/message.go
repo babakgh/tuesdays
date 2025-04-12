@@ -7,9 +7,10 @@ import (
 
 // CommandMessage represents the structure of incoming command messages
 type CommandMessage struct {
-	Command string          `json:"command"`
-	Message string          `json:"message,omitempty"`
-	Data    json.RawMessage `json:"data,omitempty"`
+	Command   string          `json:"command"`
+	Message   string          `json:"message,omitempty"`
+	Recipient string          `json:"recipient,omitempty"`
+	Data      json.RawMessage `json:"data,omitempty"`
 }
 
 // EventMessage represents the structure of outgoing event messages
@@ -55,5 +56,14 @@ func NewMeEventMessage(member string, id string) *EventMessage {
 		Data: map[string]string{
 			"id": id,
 		},
+	}
+}
+
+// NewDMEventMessage creates a new EventMessage for direct messages
+func NewDMEventMessage(sender string, message string) *EventMessage {
+	return &EventMessage{
+		Event:   "dm",
+		Member:  sender,
+		Message: message,
 	}
 }

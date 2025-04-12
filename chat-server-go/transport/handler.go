@@ -102,8 +102,9 @@ func (h *Handler) handleMessages(member *domain.Member) {
 		}
 
 		var cmd struct {
-			Command string `json:"command"`
-			Message string `json:"message"`
+			Command   string `json:"command"`
+			Message   string `json:"message"`
+			Recipient string `json:"recipient,omitempty"`
 		}
 		if err := json.Unmarshal(message, &cmd); err != nil {
 			log.Printf("Error parsing command: %v", err)
@@ -134,6 +135,60 @@ func (h *Handler) handleMessages(member *domain.Member) {
 
 		case "me":
 			h.sendMeEvent(member)
+			
+		case "dm":
+			if cmd.Recipient == "" {
+				// Send error back to sender
+				errorEvent := map[string]interface{}{
+					"event":   "error",
+					"message": "Recipient is required for DM",
+				}
+				member.Conn.WriteJSON(errorEvent)
+				continue
+			}
+			
+			// Find recipient member
+			var recipientMember *domain.Member
+			members := h.store.List()
+			for _, m := range members {
+				if m.Name == cmd.Recipient {
+					recipientMember = m
+					break
+				}
+			}
+			
+			if recipientMember == nil {
+				// Send error back to sender
+				errorEvent := map[string]interface{}{
+					"event":   "error",
+					"message": fmt.Sprintf("Member '%s' not found", cmd.Recipient),
+				}
+				member.Conn.WriteJSON(errorEvent)
+				continue
+			}
+			
+			// Send DM to recipient
+			dmEvent := map[string]interface{}{
+				"event":   "dm",
+				"member":  member.Name,
+				"message": cmd.Message,
+			}
+			if err := recipientMember.Conn.WriteJSON(dmEvent); err != nil {
+				log.Printf("Error sending DM to member %s: %v", recipientMember.ID, err)
+				continue
+			}
+			
+			// Send confirmation to sender
+			confirmEvent := map[string]interface{}{
+				"event":   "dm_sent",
+				"member":  cmd.Recipient,
+				"message": cmd.Message,
+			}
+			if err := member.Conn.WriteJSON(confirmEvent); err != nil {
+				log.Printf("Error sending confirmation to member %s: %v", member.ID, err)
+			}
+			
+			log.Printf("📤 DM from %s to %s: %s", member.Name, cmd.Recipient, cmd.Message)
 		}
 	}
 }

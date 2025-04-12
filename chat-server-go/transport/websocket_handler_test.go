@@ -159,6 +159,97 @@ func TestWebSocketHandler_handleMessages(t *testing.T) {
 	default:
 		t.Error("No list response was sent")
 	}
+	
+	// Test DM command (with invalid recipient)
+	invalidDmMsg := map[string]interface{}{
+		"command":   "dm",
+		"message":   "Hello, this is a direct message!",
+		"recipient": "nonexistent-member", // This member doesn't exist
+	}
+	data, _ = json.Marshal(invalidDmMsg)
+	mockConn.readChan <- data
+	
+	// Wait for the message to be processed
+	time.Sleep(100 * time.Millisecond)
+	
+	// Verify error response was sent for invalid recipient
+	select {
+	case msg := <-mockConn.writeChan:
+		var event map[string]interface{}
+		if err := json.Unmarshal(msg, &event); err != nil {
+			t.Errorf("Failed to unmarshal error event: %v", err)
+		}
+		if event["event"] != "error" {
+			t.Errorf("Expected event type 'error', got %v", event["event"])
+		}
+	default:
+		t.Error("No error response was sent for invalid recipient")
+	}
+	
+	// Create another member for DM test
+	mockConn2 := newMockWebSocketConn().(*mockWebSocketConn)
+	member2 := &domain.Member{
+		ID:   "2",
+		Name: "recipient-member",
+		Conn: mockConn2,
+	}
+	
+	// Add second member to store
+	if err := handler.store.Add(member2); err != nil {
+		t.Fatalf("Failed to add second member: %v", err)
+	}
+	
+	// Start message handling for second member
+	go handler.handleMessages(member2)
+	
+	// Test valid DM command
+	validDmMsg := map[string]interface{}{
+		"command":   "dm",
+		"message":   "Hello, this is a direct message!",
+		"recipient": "recipient-member", // This member exists
+	}
+	data, _ = json.Marshal(validDmMsg)
+	mockConn.readChan <- data
+	
+	// Wait for the message to be processed
+	time.Sleep(100 * time.Millisecond)
+	
+	// Verify DM was delivered to recipient
+	select {
+	case msg := <-mockConn2.writeChan:
+		var event map[string]interface{}
+		if err := json.Unmarshal(msg, &event); err != nil {
+			t.Errorf("Failed to unmarshal dm event: %v", err)
+		}
+		if event["event"] != "dm" {
+			t.Errorf("Expected event type 'dm', got %v", event["event"])
+		}
+		if event["member"] != "test" {
+			t.Errorf("Expected sender 'test', got %v", event["member"])
+		}
+		if event["message"] != "Hello, this is a direct message!" {
+			t.Errorf("Expected correct message, got %v", event["message"])
+		}
+	default:
+		t.Error("No DM was delivered to recipient")
+	}
+	
+	// Verify confirmation was sent to sender
+	select {
+	case msg := <-mockConn.writeChan:
+		var event map[string]interface{}
+		if err := json.Unmarshal(msg, &event); err != nil {
+			t.Errorf("Failed to unmarshal confirmation event: %v", err)
+		}
+		if event["event"] != "dm_sent" {
+			t.Errorf("Expected event type 'dm_sent', got %v", event["event"])
+		}
+	default:
+		t.Error("No confirmation was sent to sender")
+	}
+	
+	// Clean up second member
+	mockConn2.Close()
 
 	// Close the connection
 	mockConn.Close()
