@@ -1,0 +1,39 @@
+# Server configuration
+server:
+  port: 8080
+  host: 0.0.0.0
+  shutdownTimeout: 30 # seconds
+  readTimeout: 15 # seconds
+  writeTimeout: 15 # seconds
+  idleTimeout: 60 # seconds
+
+# Logging configuration
+logging:
+  level: info # debug, info, warn, error
+  format: json # json, text
+  timeFormat: RFC3339
+
+# Metrics configuration
+metrics:
+  enabled: true
+  path: /metrics
+
+# Tracing configuration
+tracing:
+  enabled: true
+  exporter: otlp # otlp, jaeger, zipkin
+  endpoint: localhost:4317
+  serviceName: signaling-server
+
+# WebSocket configuration
+websocket:
+  path: /ws
+  pingInterval: 30 # seconds
+  pongWait: 60 # seconds
+  writeWait: 10 # seconds
+  maxMessageSize: 1048576 # 1MB in bytes
+
+# Monitoring configuration
+monitoring:
+  livenessPath: /health/live
+  readinessPath: /health/ready
